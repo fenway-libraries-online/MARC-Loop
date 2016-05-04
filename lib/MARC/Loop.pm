@@ -56,7 +56,7 @@ sub marcloop(&;$%) {
         $fh = \*STDIN;
     }
     # --- Set up variables that identify the current record
-    my $str;
+    my $strlen;
     my $n = 0;
     my $byte_pos = 0;
     my $bibid;
@@ -78,11 +78,13 @@ sub marcloop(&;$%) {
     RECORD:
     while (1) {
         # --- Read the next MARC record
+        my $str;
         {
             local $/ = RECORD_TERMINATOR;
             $str = <$fh>;
         }
         last if !defined $str;
+        $strlen = length $str;
         $n++;
         # --- Parse and process it
         eval {
@@ -170,7 +172,7 @@ sub marcloop(&;$%) {
         }
     }
     continue {
-        $byte_pos += length($str);
+        $byte_pos += $strlen;
     }
 
     # --- Report results
