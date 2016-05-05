@@ -67,7 +67,7 @@ sub marcloop(&;$%) {
         printf STDERR "Warning: %s at record %d (offset %d, bib ID %s) of file %s\n",
             $msg, $n, $byte_pos, (defined $bibid ? $bibid : 'unknown'), $f;
     };
-    my $error = $arg{'error'} || sub {
+    my $error = $arg{'error'} || $arg{'errors'} || sub {
         my ($msg) = @_;
         chomp $msg;
         printf STDERR "Error: %s at record %d (offset %d, bib ID %s) of file %s\n",
