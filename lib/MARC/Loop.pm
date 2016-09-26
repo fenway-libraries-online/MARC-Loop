@@ -99,19 +99,19 @@ sub marcloop(&;$%) {
                 (\d{5}) # 12-16 base address = length of leader + directory
                 (.{7})  # 17-23 other stuff
             /x) {
-                $error->("Not a USMARC record: pathological leader");
+                $error->("Not a USMARC record: pathological leader", \$str);
             }
             my ($reclen, $baseaddr) = ($1, $5);
             if ($reclen != length $str) {
-                $error->("Incorrect record length");
+                $error->("Incorrect record length", \$str);
             }
             my $leader    = substr($str, 0, 24);
             my $directory = substr($str, 24, $baseaddr - 24);
             if (length($directory) % 12 != 1) {
-                $error->("Directory length not a multiple of 12 bytes");
+                $error->("Directory length not a multiple of 12 bytes", \$str);
             }
             if (substr($directory, -1, 1) ne FIELD_TERMINATOR) {
-                $error->("Directory not terminated");
+                $error->("Directory not terminated", \$str);
             }
             my ($field, @fields);
             # --- Loop through the fields
@@ -121,7 +121,7 @@ sub marcloop(&;$%) {
                 my $value = substr($str, $baseaddr + $ofs, $len);
                 # --- Make sure the field ends in the field terminator
                 if (substr($value, -1) ne FIELD_TERMINATOR) {
-                    $error->("Field $tag not terminated");
+                    $error->("Field $tag not terminated", \$str);
                 }
                 else {
                     $value = substr($value, 0, -1);
@@ -143,20 +143,20 @@ sub marcloop(&;$%) {
                         push @subfields, [ $1, \$subval ];
                     }
                     if (@subfields == 0) {
-                        $error->("Empty field '$tag'");
+                        $error->("Empty field '$tag'", \$str);
                     }
                     push @fields, [ $tag, \$value, undef, $i1, $i2, @subfields ];
                 }
             }
             if ($arg{'test_build_record'} && $str ne marcbuild($leader, \@fields)) {
-                $error->("INTERNAL ERROR: marcbuild() failed");
+                $error->("INTERNAL ERROR: marcbuild() failed", \$str);
             }
             eval {
                 $sub->($leader, \@fields, \$str);
             };
             if ($@) {
                 chomp $@;
-                $error->($@);
+                $error->($@, \$str);
                 last if $arg{'strict'};
             }
             elsif ($arg{'print'}) {
@@ -289,19 +289,19 @@ sub marcparse {
         (\d{5}) # 12-16 base address = length of leader + directory
         (.{7})  # 17-23 other stuff
     /x) {
-        $error->("Not a USMARC record: pathological leader");
+        $error->("Not a USMARC record: pathological leader", $strref);
     }
     my ($reclen, $baseaddr) = ($1, $5);
     if ($reclen != length $$strref) {
-        $error->("Incorrect record length");
+        $error->("Incorrect record length", $strref);
     }
     my $leader    = substr($$strref, 0, 24);
     my $directory = substr($$strref, 24, $baseaddr - 24);
     if (length($directory) % 12 != 1) {
-        $error->("Directory length not a multiple of 12 bytes");
+        $error->("Directory length not a multiple of 12 bytes", $strref);
     }
     if (substr($directory, -1, 1) ne FIELD_TERMINATOR) {
-        $error->("Directory not terminated");
+        $error->("Directory not terminated", $strref);
     }
     my ($field, @fields);
     # --- Loop through the fields
@@ -311,7 +311,7 @@ sub marcparse {
         my $value = substr($$strref, $baseaddr + $ofs, $len);
         # --- Make sure the field ends in the field terminator
         if (substr($value, -1) ne FIELD_TERMINATOR) {
-            $error->("Field $tag not terminated");
+            $error->("Field $tag not terminated", $strref);
         }
         # --- Strip the field terminator
         $value = substr($value, 0, -1);
@@ -332,7 +332,7 @@ sub marcparse {
                 push @subfields, [ $1, \$subval ];
             }
             if (@subfields == 0) {
-                $error->("Empty field '$tag'");
+                $error->("Empty field '$tag'", $strref);
             }
             push @fields, [ $tag, \$value, undef, $i1, $i2, @subfields ];
         }
@@ -379,6 +379,108 @@ MARC::Loop - process a batch of MARC21 records
 MARC::Loop is an alternative to L<MARC::File|MARC::File> and
 L<MARC::Record|MARC::Record> that eschews an object-oriented approach in favor
 of a bare-bones procedural one.
+
+Each field within a record is parsed into an array containing the field's tag,
+a reference to its raw contents (not including the field terminator), and
+possibly additional elements.  Control fields have only two or three elements:
+
+    $control_field = [
+        $tag,
+        \$contents,
+        $delete     # optional
+    ];
+
+Data fields have at least five elements:
+
+    $data_field = [
+        $tag,
+        \$contents,
+        $delete,    # required but may be undefined
+        $ind1,
+        $ind2,
+        @subfields  # zero or more
+    ];
+
+Each subfield within the field is represented by a reference to a two-element
+array:
+
+    $subfield = [
+        $identifier,
+        \$contents
+    ];
+
+Thus a full 245 field that might be represented in plain like this:
+
+    245 10 $a War and peace. $c Translated by Louise and Aylmer Maude.
+
+Would be parsed into the following data structure:
+
+    $my_title_field = [
+        '245',
+        \"10\x1faWar and peace.\x1fcTranslated by Louise and Aylmer Maude.",
+        undef,
+        '1',
+        '0',
+        [ 'a', \'War and peace.' ],
+        [ 'c', \'Translated by Louise and Aylmer Maude.' ],
+    ];
+
+Access to the different parts of a field is simplified by the following constants, which may be imported:
+
+=over 4
+
+=item B<TAG> = 0
+
+The field's three-byte tag.
+
+=item B<VALREF> = 1
+
+A reference to the raw field contents.  The field terminator is B<not>
+included.
+
+=item B<DELETE> = 2
+
+If set to a true value, the field will B<not> be included in the output of
+B<marcbuild>.
+
+=item B<IND1> = 3
+
+The field's first indicator, if it is a data field.
+
+=item B<IND2> = 4
+
+The field's second indicator, if it is a data field.
+
+=item B<SUBS> = 5
+
+The first subfield within a data field.  The index of the last one may be
+obtained from a field B<$f> using the array-length notation B<$#$f>.
+
+=back
+
+Accessing the field's subfields can be done in a variety of ways; here are some
+examples of subfield iteration:
+
+    # 1. Copy the whole field, then throw away all but the subfields
+    @subfields = @$field;
+    splice @subfields, 0, SUBS;
+    foreach $sub (@subfields) { ... }
+
+    # 2. Use the range operator
+    @subfields = @$field[SUBS .. $#$field];
+    foreach $sub (@subfields) { ... }
+
+    # 3. Loop with array indices
+    foreach (SUBS .. $#$field) {
+        $sub = $field->[$_];
+        ...
+    }
+
+    # 4. C-style for loop
+    for ($i = SUBS; $i < @$field; $i++) {
+        $sub = $field->[$i];
+        ...
+    }
 
 =head1 FUNCTIONS
 
@@ -438,6 +540,14 @@ is never dropped, of course.)
 A code reference to call when there is an error.
 
     'error' => sub { exit -1 }
+
+B<errors> is accepted as a synonym.
+
+=item B<field_class>
+
+A package name into which to bless fields; the default is L<MARC::Loop::Field>
+which, however, does not yet exist as a package.  No package method is called
+(e.g., B<new>); the array reference to the field is B<bless>ed directly.
 
 =item B<strict>
 
@@ -499,5 +609,5 @@ Paul Hoffman E<lt>paul@flo.orgE<gt>.
 
 =head1 COPYRIGHT
 
-Copyright 2009-2010 Fenway Libraries Online.  Released under the GNU Public
-License, version 3.
+Copyright 2009-2016 Fenway Libraries Online.  Released under the GNU
+Public License, version 3.
