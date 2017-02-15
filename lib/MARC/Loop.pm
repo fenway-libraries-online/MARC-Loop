@@ -20,13 +20,14 @@ use constant SUBS   => 5;
 
 use constant SUB_ID     => 0;
 use constant SUB_VALREF => 1;
+use constant SUB_DELETE => 2;
 
 use constant RECORD_TERMINATOR  => "\x1d";
 use constant FIELD_TERMINATOR   => "\x1e";
 use constant SUBFIELD_DELIMITER => "\x1f";
 
 @ISA = qw(Exporter);
-@EXPORT_OK = qw(marcloop marcparse marcfield marcindicators marcbuild TAG VALREF DELETE IND1 IND2 SUBS SUB_ID SUB_VALREF RECORD_TERMINATOR FIELD_TERMINATOR SUBFIELD_DELIMITER);
+@EXPORT_OK = qw(marcloop marcparse marcfield marcindicators marcbuild TAG VALREF DELETE IND1 IND2 SUBS SUB_ID SUB_VALREF SUB_DELETE RECORD_TERMINATOR FIELD_TERMINATOR SUBFIELD_DELIMITER);
 
 sub marcloop(&;$%) {
     my ($sub, $f, %arg) = @_;
@@ -248,8 +249,8 @@ sub marcbuild {
         else {
             $body .= $i1 . $i2;
             foreach my $s (@subfields) {
-                my ($code, $content) = @$s;
-                $body .= SUBFIELD_DELIMITER . $code . $$content if defined $$content;
+                my ($code, $content, $subdelete) = @$s;
+                $body .= SUBFIELD_DELIMITER . $code . $$content if defined $$content && !$subdelete;
             }
         }
         $body .= FIELD_TERMINATOR;
@@ -273,7 +274,7 @@ sub marcparse {
     };
     my $error = $args{'error'} || sub {
         my ($msg) = @_;
-        die "marcloop: error: $msg\n";
+        die "error: $msg\n";
     };
     my %drop = %{ $args{'drop'} || {} };
     my %only = %{ $args{'only'} || {} };
